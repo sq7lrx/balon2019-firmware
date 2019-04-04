@@ -1,4 +1,4 @@
-include <Arduino.h>
+#include <Arduino.h>
 #include "DHT.h"
 
 #define DHT11_PIN 4 //do zmiany
