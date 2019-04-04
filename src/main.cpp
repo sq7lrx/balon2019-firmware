@@ -8,6 +8,9 @@ float temperatura;
 
 DHT dht;
 
+float wilgotnosc;
+float temperatura;
+
 void setup() {
   // Tutaj umieszczamy wszystkie funkcje, ktore
   // Arduino ma wykonac zaraz po starcie.
