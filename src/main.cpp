@@ -1,9 +1,17 @@
 #include <Arduino.h>
 
 void setup() {
-  // put your setup code here, to run once:
+  // Tutaj umieszczamy wszystkie funkcje, ktore
+  // Arduino ma wykonac zaraz po starcie.
+  // UWAGA: Pamietajcie o kolejnosci
+
+
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
+  // tutaj umieszczamy wszystkie funkcje, ktore
+  // program ma wykonywac w petli przez caly czas
+  // dzialania.
+
+  
 }
