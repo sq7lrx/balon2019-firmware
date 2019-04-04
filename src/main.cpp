@@ -5,6 +5,9 @@
 
 DHT dht;
 
+float wilgotnosc;
+float temperatura;
+
 void setup() {
   // Tutaj umieszczamy wszystkie funkcje, ktore
   // Arduino ma wykonac zaraz po starcie.
@@ -16,8 +19,8 @@ void setup() {
 //funkcja pomiaru temperatury i wilgotnosci
 void pomiardht()
 {
-  float wilgotnosc = dht.getHumidity();
-  float temperatura = dht.getTemperature();
+ wilgotnosc = dht.getHumidity();
+ temperatura = dht.getTemperature();
   
   if (dht.getStatusString() == "OK") {
     Serial.print("Wilgotnosc: ");
