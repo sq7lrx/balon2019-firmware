@@ -11,7 +11,7 @@ void setup()
   dht.setup(DHT11_PIN);
 }
  
-void loop()
+void pomiardht()
 {
   float wilgotnosc = dht.getHumidity();
   float temperatura = dht.getTemperature();
@@ -25,4 +25,9 @@ void loop()
     Serial.println("°C");
   }
   delay (1000);
+}
+
+void loop()
+{
+  pomiardht();
 }
