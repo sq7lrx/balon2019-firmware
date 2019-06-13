@@ -1,74 +1,362 @@
+#include "gps.h"
 #include <Arduino.h>
-#include <String.h>
+#include <stdlib.h>
+#include <string.h>
+
+// deklaracje modulu
+static void parse_sentence_type(const char * token);
+static void parse_time(const char *token);
+static void parse_status(const char *token);
+static void parse_lat(const char *token);
+static void parse_lat_hemi(const char *token);
+static void parse_lon(const char *token);
+static void parse_lon_hemi(const char *token);
+static void parse_speed(const char *token);
+static void parse_course(const char *token);
+static void parse_altitude(const char *token);
+
+static void parse_sat(const char *token);
+
+// deklaracje typow
+typedef void (*t_nmea_parser)(const char *token);
+
+enum t_sentence_type {
+  SENTENCE_UNK,
+  SENTENCE_GGA,
+  SENTENCE_RMC
+};
+
+
+// stale
+static const t_nmea_parser unk_parsers[] = {
+  parse_sentence_type,    // $GPxxx
+};
+
+static const t_nmea_parser gga_parsers[] = {
+  NULL,             // $GPGGA
+  parse_time,       // Time
+  NULL,             // Latitude
+  NULL,             // N/S
+  NULL,             // Longitude
+  NULL,             // E/W
+  NULL,             // Fix quality 
+  parse_sat,        // Number of satellites
+  NULL,             // Horizontal dilution of position
+  parse_altitude,   // Altitude
+  NULL,             // "M" (mean sea level)
+  NULL,             // Height of GEOID (MSL) above WGS84 ellipsoid
+  NULL,             // "M" (mean sea level)
+  NULL,             // Time in seconds since the last DGPS update
+  NULL              // DGPS station ID number
+};
+
+static const t_nmea_parser rmc_parsers[] = {
+  NULL,             // $GPRMC
+  parse_time,       // Time
+  parse_status,     // A=active, V=void
+  parse_lat,        // Latitude,
+  parse_lat_hemi,   // N/S
+  parse_lon,        // Longitude
+  parse_lon_hemi,   // E/W
+  parse_speed,      // Speed over ground in knots
+  NULL,             // Track angle in degrees (true)
+  NULL,             // Date (DDMMYY)
+  NULL,             // Magnetic variation
+  NULL              // E/W
+};
+
+static const int NUM_OF_UNK_PARSERS = (sizeof(unk_parsers) / sizeof(t_nmea_parser));
+static const int NUM_OF_GGA_PARSERS = (sizeof(gga_parsers) / sizeof(t_nmea_parser));
+static const int NUM_OF_RMC_PARSERS = (sizeof(rmc_parsers) / sizeof(t_nmea_parser));
+
+// zmienne
+static t_sentence_type sentence_type = SENTENCE_UNK;
+static bool at_checksum = false;
+static unsigned char our_checksum = '$';
+static unsigned char their_checksum = 0;
+static char token[16];
+static int num_tokens = 0;
+static unsigned int offset = 0;
+ bool active = false;
+static char gga_time[7], rmc_time[7];
+static char new_time[7];
+static float new_lat;
+static float new_lon;
+static float new_course;
+static float new_speed;
+static float new_altitude;
+
+// publiczne (extern) zmienne dla innych modulow
+char gps_time[7];       // HHMMSS
+float gps_lat = 0;
+float gps_lon = 0;
+float gps_course = 0;
+float gps_speed = 0;
+float gps_altitude = 0;
+char gps_sat = 0;
 
 
 
-String nastepny (int* poczatek, int* koniec, String linijka)
+// funkcje
+unsigned char from_hex(char a) 
 {
-  String wycinek;
-
-  *poczatek=linijka.indexOf(*koniec);
-  *koniec=linijka.indexOf(',', *(poczatek)+1);
-
-  wycinek = linijka.substring(*poczatek+1, *koniec);
-
-  return wycinek;
+  if (a >= 'A' && a <= 'F')
+    return a - 'A' + 10;
+  else if (a >= 'a' && a <= 'f')
+    return a - 'a' + 10;
+  else if (a >= '0' && a <= '9')
+    return a - '0';
+  else
+    return 0;
 }
 
-void setup() {
-  Serial.begin(9600);
+void parse_sentence_type(const char *token)
+{
+  if (strcmp(token, "$GPGGA") == 0) {
+    sentence_type = SENTENCE_GGA;
+  } else if (strcmp(token, "$GPRMC") == 0) {
+    sentence_type = SENTENCE_RMC;
+  } else {
+    sentence_type = SENTENCE_UNK;
+    // Serial.print("GNS: Ramka ");
+    // Serial.println(token);
+    // Serial.flush();
+  }
+}
+
+void parse_time(const char *token)
+{
+  // Time can have decimals (fractions of a second), but we only take HHMMSS
+  strncpy(new_time, token, 6);
+}
+
+void parse_status(const char *token)
+{
+  // "A" = active, "V" = void. We shoud disregard void sentences
+  if (strcmp(token, "A") == 0)
+    active = true;
+    
+  else
+    active = false;
+    
+ 
+}
+
+void parse_lat(const char *token)
+{
+  // Parses latitude in the format "DD" + "MM" (+ ".M{...}M")
+  char degs[3];
+  if (strlen(token) >= 4) {
+    degs[0] = token[0];
+    degs[1] = token[1];
+    degs[2] = '\0';
+    // RTTY-ready latitude
+    new_lat = atof(degs) + atof(token + 2) / 60;
+    //Serial.println(token);
+  
+  }
+
 
 }
 
-void loop() {
-  int poczatek=0;
-  int koniec=0;
+void parse_lat_hemi(const char *token)
+{
+  if (token[0] == 'S')
+    new_lat = -new_lat;
+ // new_lat[7] = token[0];
+  //new_lon[8] = '\0';
+}
 
-  //String linijka=Serial.readStringUntil('/n');
-  String linijka="$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A";
-
-
-  if(linijka.substring(0,6)=="$GPRMC")
-  {
-    koniec=linijka.indexOf(',');
-
-    nastepny(&poczatek, &koniec, linijka); //godzina
-    nastepny(&poczatek, &koniec, linijka); //a/v
-    nastepny(&poczatek, &koniec, linijka); //dl
-    nastepny(&poczatek, &koniec, linijka); // N
-    nastepny(&poczatek, &koniec, linijka); // szer
-    nastepny(&poczatek, &koniec, linijka); // E
-    nastepny(&poczatek, &koniec, linijka); // Speed over the ground in knots
-    nastepny(&poczatek, &koniec, linijka); // Track angle in degrees True
-    nastepny(&poczatek, &koniec, linijka); //  Date - 23rd of March 1994
-    nastepny(&poczatek, &koniec, linijka); //  Magnetic Variation
-
-    delay(5000);
+void parse_lon(const char *token)
+{
+  // Longitude is in the format "DDD" + "MM" (+ ".M{...}M")
+  char degs[4];
+  if (strlen(token) >= 5) {
+    degs[0] = token[0];
+    degs[1] = token[1];
+    degs[2] = token[2];
+    degs[3] = '\0';
+    
+   
+   // RTTY-ready longtitude
+    new_lon = (atof(degs) + atof(token + 3) / 60);
+    //Serial.println(atof(degs));
+    //Serial.println((atof(token + 3) / 60));
+    //Serial.println(new_lon,8);
+    //Serial.println(token);
   }
-  else if(linijka.substring(0,6)=="$GPGGA")
-  {
-    koniec=linijka.indexOf(',');
 
-    nastepny(&poczatek, &koniec, linijka); //Fix taken at 12:35:19 UTC
-    nastepny(&poczatek, &koniec, linijka); //Latitude 48 deg 07.038' N
-    nastepny(&poczatek, &koniec, linijka); //N
-    nastepny(&poczatek, &koniec, linijka); // Longitude 11 deg 31.000
-    nastepny(&poczatek, &koniec, linijka); // E
-    nastepny(&poczatek, &koniec, linijka); // Fix quality: 0 = invalid
-                                          // 1 = GPS fix (SPS)
-                                          // 2 = DGPS fix
-                                          // 3 = PPS fix
-			                                    // 4 = Real Time Kinematic
-			                                    // 5 = Float RTK
-                                          // 6 = estimated (dead reckoning) (2.3 feature)
-			                                    // 7 = Manual input mode
-			                                    // 8 = Simulation modeE
-    nastepny(&poczatek, &koniec, linijka); // Speed over the ground in knots
-    nastepny(&poczatek, &koniec, linijka); // Horizontal dilution of position
-    nastepny(&poczatek, &koniec, linijka); //  Altitude, Meters, above mean sea level
-    nastepny(&poczatek, &koniec, linijka); //  M
-    nastepny(&poczatek, &koniec, linijka); // Height of geoid above WGS84 ellipsoid
-    nastepny(&poczatek, &koniec, linijka); // M
-    nastepny(&poczatek, &koniec, linijka); //  empty
+
+  
+}
+
+void parse_lon_hemi(const char *token)
+{
+  if (token[0] == 'W')
+    new_lon = -new_lon;
+  //new_aprs_lon[8] = token[0];
+  //new_aprs_lon[9] = '\0';
+}
+
+void parse_speed(const char *token)
+{
+  new_speed = atof(token);
+}
+
+void parse_course(const char *token)
+{
+  new_course = atof(token);
+}
+
+void parse_altitude(const char *token)
+{
+  new_altitude = atof(token);
+}
+
+void parse_sat(const char *token)
+{
+  gps_sat = atof(token);
+}
+
+/*void parse_fix(const char *token)
+{
+  gps_fix = atof(token);
+}
+*/
+//
+// Funkcje wyeksportowane
+//
+void gps_parser_setup() {
+  strcpy(gps_time, "000000");
+  gps_lat=0;
+  gps_lon=0;
+}
+
+bool gps_decode(char c)
+{
+  int ret = false;
+  //int cc;
+
+  switch(c) {
+    case '\r':
+    case '\n':
+      // End of sentence
+
+      if (num_tokens && our_checksum == their_checksum) {
+#ifdef DEBUG_GPS
+        Serial.print(" (OK!)");
+#endif
+        // Return a valid position only when we've got two rmc and gga
+        // messages with the same timestamp.
+        switch (sentence_type) {
+          case SENTENCE_UNK:
+            break;    // Keeps gcc happy
+          case SENTENCE_GGA:
+            strcpy(gga_time, new_time);
+            break;
+          case SENTENCE_RMC:
+            strcpy(rmc_time, new_time);
+            break;
+        }
+
+        // Valid position scenario:
+        //
+        // 1. The timestamps of the two previous GGA/RMC sentences must match.
+        //
+        // 2. We just processed a known (GGA/RMC) sentence. Suppose the
+        //    contrary: after starting up this module, gga_time and rmc_time
+        //    are both equal (they're both initialized to ""), so (1) holds
+        //    and we wrongly report a valid position.
+        //
+        // 3. The GPS has a valid fix. For some reason, the Venus 634FLPX
+        //    reports 24 deg N, 121 deg E (the middle of Taiwan) until a valid
+        //    fix is acquired:
+        //
+        //    $GPGGA,120003.000,2400.0000,N,12100.0000,E,0,00,0.0,0.0,M,0.0,M,,0000**69 (OK!)
+        //    $GPGSA,A,1,,,,,,,,,,,,,0.0,0.0,0.0**30 (OK!)
+        //    $GPRMC,120003.000,V,2400.0000,N,12100.0000,E,000.0,000.0,280606,,,N**78 (OK!)
+        //    $GPVTG,000.0,T,,M,000.0,N,000.0,K,N**02 (OK!)
+
+        if (sentence_type != SENTENCE_UNK &&      // Known sentence?
+            strcmp(gga_time, rmc_time) == 0 &&    // RMC/GGA times match?
+            active) {                             // Valid fix?
+          // Atomically merge data from the two sentences
+          strcpy(gps_time, new_time);
+          gps_lat = new_lat;
+          gps_lon = new_lon;
+          gps_course = new_course;
+          gps_speed = new_speed;
+          gps_altitude = new_altitude;
+          ret = true;
+        }
+      }
+#ifdef DEBUG_GPS
+      if (num_tokens)
+        Serial.println();      
+#endif
+
+      at_checksum = false;        // CR/LF signals the end of the checksum
+      our_checksum = '$';         // Reset checksums
+      their_checksum = 0;
+      offset = 0;                 // Prepare for the next incoming sentence
+      num_tokens = 0;
+      sentence_type = SENTENCE_UNK;
+      break;
+    
+    case '*':
+      // Begin of checksum and process token (ie. do not break)
+      at_checksum = true;
+      our_checksum ^= c;
+#ifdef DEBUG_GPS
+      Serial.print(c);
+#endif
+
+    case ',':
+      // Process token
+      token[offset] = '\0';
+      our_checksum ^= c;  // Checksum the ',', undo the '*'
+
+      // Parse token
+      switch (sentence_type) {
+        case SENTENCE_UNK:
+          if (num_tokens < NUM_OF_UNK_PARSERS && unk_parsers[num_tokens])
+            unk_parsers[num_tokens](token);
+          break;
+        case SENTENCE_GGA:
+          if (num_tokens < NUM_OF_GGA_PARSERS && gga_parsers[num_tokens])
+            gga_parsers[num_tokens](token);
+          break;
+        case SENTENCE_RMC:
+          if (num_tokens < NUM_OF_RMC_PARSERS && rmc_parsers[num_tokens])
+            rmc_parsers[num_tokens](token);
+          break;
+      }
+
+      // Prepare for next token
+      num_tokens++;
+      offset = 0;
+#ifdef DEBUG_GPS
+      Serial.print(c);
+#endif
+      break;
+
+    default:
+      // Any other character
+      if (at_checksum) {
+        // Checksum value
+        their_checksum = their_checksum * 16 + from_hex(c);
+      } else {
+        // Regular NMEA data
+        if (offset < 15) {  // Avoid buffer overrun (tokens can't be > 15 chars)
+          token[offset] = c;
+          offset++;
+          our_checksum ^= c;
+        }
+      }
+#ifdef DEBUG_GPS
+      Serial.print(c);
+
+#endif
   }
+  return ret;
 }
